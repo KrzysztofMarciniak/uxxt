@@ -1,0 +1,51 @@
+uxxt - unix xxt. X11 terminal split into small programs that talk over a unix socket.
+
+	uxxt-logic	pty + child + libvterm + scrollback. no X11.        logic/config.h
+	uxxt-x11	X11 drawing, keyboard, mouse. no pty, no parsing.    x11/config.h
+	uxxt-buffer	prints terminal text (scrollback + screen).          buffer/config.h
+	uxxt-keys	sends keys or text to a running terminal.            keys/config.h
+	uxxt		sh script: starts logic and x11 together.            (config at top)
+
+build (needs libX11, libvterm >= 0.3):
+	make && sudo make install
+
+run:
+	uxxt                    start your shell, or come back to it if it is running
+	uxxt -n work            same, for a second shell called "work"
+	uxxt htop               new session running htop
+	uxxt -l                 list running sessions
+	uxxt -k work            end a session
+	uxxt -a <socket>        attach to an explicit socket
+
+closing the window only detaches. the shell keeps running, output and scrollback
+included. run uxxt again and you are back. a session ends when its shell exits
+(type exit). set KILL_ON_CLOSE 1 in x11/config.h to make closing the window end it.
+sessions live in $XDG_RUNTIME_DIR/uxxt/<name>.sock.
+
+every setting is a #define at the top of the matching config.h.
+copy, paste, search and url opening are external tools set in x11/config.h:
+
+	COPY_TOOL  PASTE_TOOL  PRIMARY_COPY_TOOL  PRIMARY_PASTE_TOOL
+	PROMPT_TOOL  SEARCH_TOOL=grep  SEARCH_ARGS  PICK_TOOL  URL_TOOL  OPEN_TOOL
+
+keys (x11/config.h, bindings[]):
+	Ctrl+Shift+C / V		copy / paste clipboard
+	Shift+Insert, middle click	paste primary
+	Shift+PgUp/PgDn, Shift+Up/Down, Shift+Home/End, wheel	scroll
+	Ctrl+Shift+F			prompt, grep whole buffer, pick line, copy it
+	Ctrl+Shift+U			list urls in buffer, pick one, open it
+	mouse: drag = select, double click = word, triple click = line
+
+scripting: every tool started from uxxt-x11 gets $UXXT_SOCK.
+	uxxt-buffer | grep error
+	uxxt-buffer -s
+	uxxt-keys 'ls -la' enter
+	uxxt-keys C-c
+	echo make | uxxt-keys
+	uxxt-keys -l 'literal text, no key names'
+	uxxt-keys -x quit       raw protocol line (ends the session)
+
+uxxt-keys: named keys enter tab esc up down left right ins del home end pgup pgdn f1..f35,
+modifiers C- A- M- S- (C-A-left), "space"; anything else is typed as text.
+
+protocol: plain text lines, documented at the top of logic/uxxt-logic.c.

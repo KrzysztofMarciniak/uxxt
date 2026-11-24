@@ -1,0 +1,87 @@
+#!/bin/sh
+# uxxt - start a terminal session, or come back to it.
+#   uxxt                   session "main": attach if it runs, else start it
+#   uxxt -n name [cmd...]  same, for the session "name"
+#   uxxt cmd args...       new session running cmd
+#   uxxt -l                list running sessions
+#   uxxt -k name           end a session
+#   uxxt -a socket         attach to an explicit socket
+# closing the window only detaches. the session keeps running (output and
+# scrollback included) until its shell exits.
+# config:
+LOGIC=${UXXT_LOGIC:-uxxt-logic}
+X11=${UXXT_X11:-uxxt-x11}
+BUFFER=${UXXT_BUFFER:-uxxt-buffer}
+KEYS=${UXXT_KEYS:-uxxt-keys}
+DEFAULT_SESSION=main
+if [ -n "$XDG_RUNTIME_DIR" ]; then
+	SESSION_DIR=${UXXT_DIR:-$XDG_RUNTIME_DIR/uxxt}
+else
+	SESSION_DIR=${UXXT_DIR:-/tmp/uxxt-$(id -u)}
+fi
+
+usage() {
+	echo "usage: uxxt [-n name] [cmd args...] | -l | -k name | -a socket" >&2
+	exit 2
+}
+
+alive() {
+	"$BUFFER" -s "$1" >/dev/null 2>&1
+}
+
+mkdir -p "$SESSION_DIR" && chmod 700 "$SESSION_DIR" || exit 1
+
+name=
+while [ $# -gt 0 ]; do
+	case $1 in
+	-l)
+		for f in "$SESSION_DIR"/*.sock; do
+			[ -S "$f" ] || continue
+			if alive "$f"; then basename "$f" .sock; else rm -f "$f"; fi
+		done
+		exit 0 ;;
+	-k)
+		[ $# -ge 2 ] || usage
+		exec "$KEYS" -s "$SESSION_DIR/$2.sock" -x quit ;;
+	-a)
+		[ $# -ge 2 ] || usage
+		exec "$X11" "$2" ;;
+	-n)
+		[ $# -ge 2 ] || usage
+		name=$2
+		shift 2 ;;
+	--)
+		shift
+		break ;;
+	-*)
+		usage ;;
+	*)
+		break ;;
+	esac
+done
+
+if [ -z "$name" ]; then
+	if [ $# -eq 0 ]; then
+		name=$DEFAULT_SESSION
+	else
+		name=$(basename "$1" | tr -c 'A-Za-z0-9._\n-' '_')-$$
+	fi
+fi
+case $name in
+"" | *[!A-Za-z0-9._-]*)
+	echo "uxxt: bad session name: $name" >&2
+	exit 2 ;;
+esac
+
+sock=$SESSION_DIR/$name.sock
+if alive "$sock"; then
+	[ $# -gt 0 ] && echo "uxxt: session '$name' is running, command ignored" >&2
+else
+	rm -f "$sock"
+	if command -v setsid >/dev/null 2>&1; then
+		setsid "$LOGIC" -s "$sock" -- "$@" </dev/null >/dev/null 2>&1 &
+	else
+		nohup "$LOGIC" -s "$sock" -- "$@" </dev/null >/dev/null 2>&1 &
+	fi
+fi
+exec "$X11" "$sock"
